@@ -1,0 +1,723 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset='utf-8'>
+    <meta http-equiv='X-UA-Compatible' content='IE=edge'>
+    <title>Page Title</title>
+    <meta name='viewport' content='width=device-width, initial-scale=1'>
+    <!-- <link rel='stylesheet' type='text/css' media='screen' href='main.css'> -->
+    <!-- <script src='main.js'></script> -->
+    <style>
+        body {
+            display: flex;
+            margin: 0;
+        }
+        .wrapper-canvas {
+            width: 80%;
+            height: 100vh;
+            background-color: #E0F7FA;
+        }
+        .wrapper-btns {
+            display: flex;
+            flex-direction: column;
+            width: 20%;
+            height: 100vh;
+            background-color: #00838F;
+        }
+        button {
+            border-color: #B39DDB;
+            background-color: #6200EA;
+            color: #fff;
+            height: 50px;
+        }
+        button.active {
+            background-color: #FFD54F;
+            color: black;
+        }
+        #backBtn {
+            margin-top: auto;
+        }
+    </style>
+</head>
+    <body>
+        <div class = "wrapper-canvas">
+            <canvas id="canvas"></canvas>
+        </div>
+        <div class = "wrapper-btns">
+            <button id='polygonBtn'>Полигон</button>
+            <button id='circleBtn'>Смайлик</button>
+            <button id='imageBtn'>Картинка</button>
+            <button id='backBtn'>удалить посл. изменение</button>
+        </div>
+    </body>
+<script>
+
+    // Линейная алгебра
+    class Vector {
+        constructor(x, y) {
+            this.x = x; this.y = y
+        }
+        static getVector(p2, p1) { // вектор от двух точек
+            return new Vector(p2.x - p1.x,  p2.y - p1.y)
+        }
+        static getNormal(v) { // нормаль вектора
+            return new Vector( v.y, -v.x )
+        }
+        static getRotationAngle(v) {  // угол поворота относитльно оси X
+            const axisY = {x: 0, y: 1}
+            const dot = Vector.dotProduct(v, axisY)
+            let angle = Math.acos(v.x / v.length())
+            angle = dot > 0 ? angle : -angle
+            return angle
+        }
+        length() {
+            return Math.sqrt(this.x * this.x + this.y * this.y)
+        }
+        normalize() { // нормализация, делает длину вектора равной единице
+            const len = Math.sqrt(this.x * this.x + this.y * this.y)
+            this.x = this.x / len 
+            this.y = this.y / len
+        }
+        negative() { // поворот вектора на 180 градусов
+            this.x = -this.x
+            this.y = -this.y
+        }
+        multi(k) { // умножения на коэффицент
+            this.x = this.x * k; this.y = this.y * k
+        }
+        static dotProduct(v1, v2) { // скалярное произведение
+            return v1.x * v2.x + v1.y * v2.y
+        }
+    }
+
+    class Matrix {
+        constructor(a, b, c, d, e, f) {
+            this.a = a; this.c = c; this.e = e
+            this.b = b; this.d = d; this.f = f
+        }
+        multiMatrix(m) { // умножение на матрицу
+            const a = this.a * m.a + this.c * m.b
+            const b = this.b * m.a + this.d * m.b
+            const c = this.a * m.c + this.c * m.d
+            const d = this.b * m.c + this.d * m.d
+            const e = this.a * m.e + this.c * m.f + this.e
+            const f = this.b * m.e + this.d * m.f + this.f
+            return new Matrix(a, b, c, d, e, f)
+        }
+        multiVector(p) { // умножение на вектор или точку
+            return {
+                x: this.a * p.x + this.c * p.y + this.e,
+                y: this.b * p.x + this.d * p.y + this.f
+            }
+        }
+        clone() { // создание копии матрицы
+            return new Matrix(this.a, this.b, this.c, this.d, this.e, this.f)
+        }
+    }
+
+    // Инцилизация canvas
+    const canvas = document.querySelector("canvas");
+    const rect = canvas.parentNode.getBoundingClientRect()
+    canvas.width = rect.width
+    canvas.height = rect.height
+    const ctx = canvas.getContext("2d");
+    ctx.lineWidth = 3;
+    
+    class AbstractFigure {
+        clockwise = false
+        constructor() { }
+
+        setClockwise(val) {
+            this.clockwise = val
+        }
+        clockwise() {
+            return this.clockwise
+        }
+    }
+
+    // Фигуры
+    class Polygon extends AbstractFigure {
+        constructor(points = []) {
+            super()
+            this.points = Object.assign(points)
+        }
+        clone() { // создание копии Polygon
+            const polygon = new Polygon(this.points)
+            return polygon
+        }
+        prop() { // свойства Polygon: позиция фигуры по x,y; длина; ширина
+            let minX = Number.MAX_VALUE; let maxX = Number.MIN_VALUE
+            let minY = Number.MAX_VALUE; let maxY = Number.MIN_VALUE
+            this.points.forEach(p => {
+                if (p.x > maxX) { maxX = p.x }
+                if (p.x < minX) { minX = p.x }
+                if (p.y > maxY) { maxY = p.y }
+                if (p.y < minY) { minY = p.y }
+            })
+            return { x: minX, y: minY, width: maxX - minX, height: maxY - minY } 
+        }
+        multiMatrix(mat) { // умножение на матрицу
+            this.points = this.points.map(( p ) => mat.multiVector( p ))
+        }
+        draw() {
+            ctx.save()
+            ctx.beginPath()
+            this.points.forEach((p, ind) => {
+                if (ind === 0) {
+                    ctx.moveTo(p.x, p.y)
+                } else {
+                    ctx.lineTo(p.x, p.y)
+                }
+            })
+            ctx.stroke()
+            ctx.restore()
+        }
+    }
+
+    class Ellipse extends AbstractFigure {
+        constructor(x, y, radiusX, radiusY, rotation, startAngle, endAngle, unclockwise) {
+            super()
+            this.x = x; this.y = y; // center
+            this.radiusX = radiusX
+            this.radiusY = radiusY
+            this.rotation = rotation // поворот элипса
+            this.startAngle = startAngle
+            this.endAngle = endAngle
+            super.setClockwise(!unclockwise)
+        }
+        clone() { // создание копии Ellipse
+            const ellipse = new Ellipse(this.x, this.y, this.radiusX, this.radiusY, this.rotation, this.startAngle, this.endAngle, !super.clockwise())
+            return ellipse
+        }
+        prop() { // свойства Ellipse: позиция фигуры по x,y; длина; ширина 
+            return { 
+                x: this.x - this.radiusX, 
+                y: this.y - this.radiusY, 
+                width: this.radiusX * 2, 
+                height: this.radiusY * 2 
+            } 
+        }
+        multiMatrix(mat) {
+            const sin = Math.sin( this.rotation )
+            const cos = Math.cos( this.rotation )
+            const newCenter = mat.multiVector( { x: this.x, y: this.y } )
+            // ось x
+            let vectorX = (new Matrix(cos, sin, -sin, cos, 0, 0)).multiVector({ x: this.radiusX, y: 0}) 
+            let extremeX = { x: this.x + vectorX.x, y: this.y + vectorX.y }
+            let newExtremeX = mat.multiVector(extremeX)
+            const newRadiusX = Vector.getVector(newExtremeX, newCenter).length()
+            // ось y
+            let vectorY = (new Matrix(cos, sin, -sin, cos, 0, 0)).multiVector({ x: 0, y: this.radiusY}) 
+            let extremeY = { x: this.x + vectorY.x, y: this.y + vectorY.y }
+            let newExtremeY = mat.multiVector(extremeY)
+            const newRadiusY = Vector.getVector(newExtremeY, newCenter).length()
+            // подсчет rotation
+            const newRotation = Vector.getRotationAngle(Vector.getVector(newExtremeX, newCenter))
+            // Записываем результат
+            this.x = newCenter.x
+            this.y = newCenter.y
+            this.radiusX = newRadiusX 
+            this.radiusY = newRadiusY
+            this.rotation = newRotation
+        }
+        draw() {
+            ctx.save()
+            ctx.beginPath()
+            ctx.ellipse(this.x, this.y, this.radiusX, this.radiusY, this.rotation, this.startAngle, this.endAngle, !super.clockwise())
+            ctx.stroke()
+            ctx.restore()
+        }
+    }
+
+    class PaintedImage extends AbstractFigure {
+        constructor(img, x, y, width, height) {
+            super()
+            this.mat = new Matrix(1, 0, 0, 1, 0, 0)
+            this.img = img
+            this.x = x; this.y = y;
+            this.width = width; this.height = height
+        }
+        clone() { // создание копии PaintedImage
+            const paintedImage = new PaintedImage(this.img, this.x, this.y, this.width, this.height)
+            paintedImage.mat = this.mat.clone()
+            return paintedImage
+        }
+        prop() { // свойства PaintedImage: позиция фигуры по x,y; длина; ширина 
+            return { 
+                x: this.x, 
+                y: this.y, 
+                width: this.width, 
+                height: this.height 
+            } 
+        }
+        multiMatrix(mat) {
+            this.mat = mat.multiMatrix( this.mat ).clone()
+        }
+        draw() {
+            ctx.beginPath()
+            ctx.save()
+            const mat = this.mat
+            ctx.transform(mat.a, mat.b, mat.c, mat.d, mat.e, mat.f)
+            ctx.drawImage(this.img, this.x, this.y, this.width, this.height)
+            ctx.restore()
+        }
+    }
+
+    class Container extends AbstractFigure {
+        constructor(figures = []) {
+            super()
+            this.figures = figures
+        }
+        clone() {
+            const figureClone = this.figures.map((figure) => figure.clone())
+            return new Container(figureClone)
+        }
+        setClockwise(val) {
+            this.figures.forEach((figure) => {
+                figure.setClockwise( super.clockwise() == val ? figure.clockwise : !figure.clockwise ) 
+            })
+            super.setClockwise(val)
+        }
+        prop() {
+            let minX = Number.MAX_VALUE; let minY = Number.MAX_VALUE;
+            let maxWidth = Number.MIN_VALUE; let maxHeight = Number.MIN_VALUE
+            this.figures.forEach(figure => {
+                const prop = figure.prop()
+                if (prop.x < minX) { minX = prop.x }
+                if (prop.y < minY) { minY = prop.y }
+                if (prop.width > maxWidth) { maxWidth = prop.width }
+                if (prop.height > maxHeight) { maxHeight = prop.height }
+            })
+            return { x: minX, y: minY, width: maxWidth, height: maxHeight } 
+        }
+        multiMatrix(mat) {
+            this.figures.forEach(( figure ) => {
+                figure.multiMatrix( mat )
+            })
+        }
+        draw() {
+            this.figures.forEach(( figure ) => {
+                figure.draw()
+            })
+        }
+    }
+
+    // Рамка редактирования
+    class Frame {
+        points = [] // точки рамки
+        figure = new Polygon() // фигура, которая редектируется
+        // свойства painted изменяются после вызова метода draw
+        paintedCircles = new Array(4).fill().map(() => (new Path2D())) // круги  для поворота рамки
+        paintedSides = new Array(4).fill().map(() => new Path2D())
+        paintedRect = new Path2D() // область перемещения рамки
+        // уголки рамки, масштабируют одновременно длину и высоту рамки
+        cornerWidth = 7.5
+        paintedCorners = new Array(4)
+
+
+        constructor(width = 0, height = 0) {
+            this.width = width;
+            this.height = height;
+            this.points = [
+                {x: 0, y: 0}, 
+                {x: width, y: 0}, 
+                {x: width, y: height}, 
+                {x: 0, y: height}
+            ]
+        }
+
+        clone() {
+            const frameClone = new Frame()
+            frameClone.points = Object.assign(this.points)
+            frameClone.figure = this.figure.clone()
+            return frameClone
+        }
+
+        adjustToFigure() { // обвалакивает фигуру рамкой
+            const prop = this.figure.prop()
+            this.width = prop.width
+            this.height = prop.height
+            this.points = [
+                {x: prop.x, y: prop.y}, 
+                {x: prop.x + this.width, y: prop.y}, 
+                {x: prop.x + this.width, y: prop.y + this.height}, 
+                {x: prop.x, y: prop.y + this.height}
+            ]
+        }
+
+        containedInRect(mouse) {
+            return ctx.isPointInPath( this.paintedRect, mouse.x, mouse.y )
+        }
+
+        containedInCorner(mouse) {
+            for (let i = 0; i < this.paintedCorners.length; ++i) {
+                if (ctx.isPointInPath( this.paintedCorners[i], mouse.x, mouse.y )) {
+                    return i
+                }
+            }
+            return -1
+        }
+
+        containedInCircle(mouse) {
+            for (let i = 0; i < this.paintedCircles.length; ++i) {
+                if (ctx.isPointInPath( this.paintedCircles[i], mouse.x, mouse.y )) {
+                    return true
+                }
+            }
+            return false
+        }
+
+        containedInSide(mouse) {
+            for (let i = 0; i < this.paintedSides.length; ++i) {
+                if (ctx.isPointInStroke( this.paintedSides[i], mouse.x, mouse.y )) {
+                    return i
+                }
+            }
+            return -1
+        }
+
+        clockwise() {
+            let indexByMinX = 0
+            for (let i = 0; i < this.points.length; ++i) { // Узнаем индекс точки c наименьшим x
+                if(this.points[indexByMinX].x > this.points[i].x) {
+                    indexByMinX = i
+                }
+            }
+            const beginIndex = (indexByMinX + 3) % this.points.length
+            const middleIndex = indexByMinX
+            const lastIndex = (indexByMinX + 1) % this.points.length
+            const v1 = {
+                x: this.points[middleIndex].x - this.points[beginIndex].x, 
+                y: this.points[middleIndex].y - this.points[beginIndex].y
+            }
+            const v2 = {
+                x: this.points[lastIndex].x - this.points[middleIndex].x, 
+                y: this.points[lastIndex].y - this.points[middleIndex].y
+            }
+            const multiVec = v1.x * v2.y - v2.x * v1.y // Векторное произведение
+            return multiVec < 0
+        }
+
+        transition(v) {
+            const mat = new Matrix(1, 0, 0, 1, v.x, v.y)
+            this.points = this.points.map(( p ) => mat.multiVector( p ))
+            this.figure.multiMatrix( mat )
+        }
+
+        rotation(downMouse, upMouse) {
+            const center = {
+                x: ( this.points[2].x + this.points[0].x ) / 2, 
+                y: (this.points[2].y + this.points[0].y) / 2
+            }
+            const axisX = Vector.getVector( downMouse, center )
+            axisX.normalize()
+            const axisY = Vector.getNormal( axisX )
+            const rotationV = Vector.getVector(upMouse, center)
+            const proj = Vector.dotProduct(axisX, rotationV)
+            let angle = Math.acos( proj / rotationV.length())
+            angle = Vector.dotProduct(axisY, rotationV) > 0 ? -angle : angle 
+            const sin = Math.sin(angle)
+            const cos = Math.cos(angle)
+            let mat = new Matrix(1, 0, 0, 1, center.x, center.y)
+            mat = mat.multiMatrix(new Matrix(cos, sin, -sin, cos, 0, 0))
+            mat = mat.multiMatrix(new Matrix(1, 0, 0, 1, -center.x, -center.y))
+            this.points = this.points.map(( p ) => mat.multiVector( p ))
+            this.figure.multiMatrix( mat )
+        }
+
+        multiBySide(index, v, shift = false) {
+            const center = {
+                    x: ( this.points[2].x + this.points[0].x ) / 2, 
+                    y: (this.points[2].y + this.points[0].y) / 2
+            }  
+            const prevSideInterval = 3
+            const referencePoint = shift ? {x: center.x, y: center.y} : this.points[ (index + prevSideInterval) % this.points.length ] 
+            const sideVector = Vector.getVector( 
+                this.points[index], 
+                this.points[ (index + 1) % this.points.length ] 
+            )
+            const adjacentVector = Vector.getVector(
+                this.points[ (index + prevSideInterval) % this.points.length ],
+                this.points[index]
+            )
+            const sideNormal = Vector.getNormal( sideVector )
+            sideNormal.normalize()
+            sideNormal.negative()
+            let dif = shift ? 2 * Vector.dotProduct(v, sideNormal) : Vector.dotProduct(v, sideNormal)
+            dif = this.clockwise() ? -dif : dif
+            const angle = Vector.getRotationAngle(adjacentVector)
+            const width = adjacentVector.length()
+            let multiX = 1 + dif / width
+            // чтобы рамкка при минимальном размере, стремящимся к нулю, не ломалась и не исчезала
+            if (multiX > 0) {
+                multiX = multiX < 0.001 ?  0.001 : multiX
+            } else {
+                multiX = multiX > -0.001 ?  -0.001 : multiX
+            }
+            const sin = Math.sin(angle)
+            const cos = Math.cos(angle)
+            let mat = new Matrix(1, 0, 0, 1, referencePoint.x, referencePoint.y)
+            mat = mat.multiMatrix(new Matrix(cos, sin, -sin, cos, 0, 0))
+            mat = mat.multiMatrix(new Matrix(multiX, 0, 0, 1, 0, 0))
+            mat = mat.multiMatrix(new Matrix(cos, -sin, sin, cos, 0, 0))
+            mat = mat.multiMatrix(new Matrix(1, 0, 0, 1, -referencePoint.x, -referencePoint.y))
+            const newPoints = this.points.map(( p ) => mat.multiVector( p ))
+            this.points = newPoints
+            this.figure.multiMatrix( mat )
+            this.figure.setClockwise( this.clockwise() )
+        }
+
+        multiByCorner(index, v) {
+            this.multiBySide(index, v)
+            const nextSideInterval = 3
+            this.multiBySide((index + nextSideInterval) % this.paintedSides.length, v)
+        }
+
+        draw( mouse = {x: -1, y: -1} ) {
+            this.figure.draw()
+
+            const points = this.clockwise() ? this.points.reverse() : this.points 
+            let selectedMouse = false // влияет на перекрашивание компонента
+
+            // уголки
+            ctx.save()
+            const center = {
+                x: ( points[2].x + points[0].x ) / 2, 
+                y: ( points[2].y + points[0].y ) / 2
+            }
+            const width = Vector.getVector( points[1], points[0] ).length()
+            const height = Vector.getVector( points[2], points[1] ).length()
+            const rotationAngle = Vector.getRotationAngle(  Vector.getVector( points[1], points[0] ) )
+            const sin = Math.sin( rotationAngle )
+            const cos = Math.cos( rotationAngle )
+            const cornerPos = [ 
+                { x: center.x - width / 2, y: center.y - height / 2 },
+                { x: center.x + width / 2, y: center.y - height / 2 },
+                { x: center.x + width / 2, y: center.y + height / 2 },
+                { x: center.x - width / 2, y: center.y + height / 2 },
+            ]
+            cornerPos.forEach((p, ind) => {
+                const p1 = { x: p.x - this.cornerWidth / 2, y: p.y - this.cornerWidth / 2 }
+                const p2 = { x: p1.x + this.cornerWidth, y: p1.y }
+                const p3 = { x: p2.x, y: p2.y + this.cornerWidth }
+                const p4 = { x: p3.x - this.cornerWidth, y: p3.y }
+                const cornerPoints = [p1, p2, p3, p4].map((p) => {
+                    let mat = new Matrix(1, 0, 0, 1, center.x, center.y)
+                    mat = mat.multiMatrix(new Matrix(cos, sin, -sin, cos, 0, 0))
+                    mat = mat.multiMatrix(new Matrix(1, 0, 0, 1, -center.x, -center.y))
+                    return mat.multiVector( p )
+                })
+                this.paintedCorners[ind] = new Path2D()
+                cornerPoints.forEach((p, index) => {
+                    if (index == 0) {
+                        this.paintedCorners[ind].moveTo(p.x, p.y)
+                    } else {
+                        this.paintedCorners[ind].lineTo(p.x, p.y)
+                    }
+                })
+                ctx.fillStyle = ctx.isPointInPath( this.paintedCorners[ind], mouse.x, mouse.y ) && !selectedMouse ? "#6200EA" : "#757575";
+                if ( !selectedMouse ) {
+                    selectedMouse = ctx.isPointInPath( this.paintedCorners[ind], mouse.x, mouse.y )
+                }
+                ctx.fill( this.paintedCorners[ind] )
+            })
+            ctx.restore()
+            // стороны
+            ctx.save()
+            for (let i = 0; i < this.paintedSides.length; ++i) {
+                const p1 = points[i]
+                const p2 = points[(i + 1) % 4]
+                this.paintedSides[i] = new Path2D()
+                this.paintedSides[i].moveTo(p1.x, p1.y)
+                this.paintedSides[i].lineTo(p2.x, p2.y)
+                ctx.strokeStyle = ctx.isPointInStroke( this.paintedSides[i], mouse.x, mouse.y ) && !selectedMouse ? "#6200EA" : "#75757599";
+                if ( !selectedMouse ) {
+                    selectedMouse = ctx.isPointInStroke( this.paintedSides[i], mouse.x, mouse.y )
+                }
+                ctx.stroke( this.paintedSides[i] )
+            }
+            ctx.restore()
+            // прямоугольник
+            this.paintedRect.painted = new Path2D()
+            points.forEach((p, ind) => {
+                if (ind == 0) {
+                    this.paintedRect.moveTo(p.x, p.y)
+                } else {
+                    this.paintedRect.lineTo(p.x, p.y)
+                }
+            })
+            // круги
+            ctx.save()
+            const d = 5
+            const angle = Math.PI / 4 // 45 градусов
+            const mat = new Matrix(angle, angle, -angle, angle, 0, 0)
+            for (let i = 0; i < 4; ++i) {
+                this.paintedCircles[i] = new Path2D()
+                const p1 = points[i]
+                const p2 = points[(i + 1) % 4]
+                const sideV = Vector.getVector(p2, p1)
+                sideV.normalize()
+                sideV.multi(20)
+                const circleV = mat.multiVector(sideV)
+                const circleP = {x: p1.x + circleV.x, y: p1.y + circleV.y}
+                this.paintedCircles[i].arc(circleP.x, circleP.y, d, 0, 2 * Math.PI)
+                ctx.fillStyle = ctx.isPointInPath( this.paintedCircles[i], mouse.x, mouse.y ) ? "#6200EA" : "#757575";
+                ctx.fill( this.paintedCircles[i] )
+            }
+            ctx.restore()
+        }
+    }
+
+    function resetBtn() {
+        polygonBtn.classList.remove('active')
+        circleBtn.classList.remove('active')
+        imageBtn.classList.remove('active')
+    }
+
+    let frame = new Frame(200 ,200)
+    let savedFrame = []
+    polygonBtn.onclick = () => {
+        savedFrame = []
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        frame = new Frame(200 ,200)
+        let points = [                
+            {x: 75.0, y: 0.0},
+            {x: 150.0, y: 100.0},
+            {x: 100.0, y: 200.0},
+            {x: 50.0, y: 200.0},
+            {x: 0.0, y: 100.0},
+            {x: 75.0, y: 0.0}
+        ]
+        points = points.map((p) => {
+            return ({ x: canvas.width / 2 + p.x - 75, y: canvas.height / 2 + p.y - 100 }) // центрируем
+        })
+        const polygon = new Polygon(points)
+        frame.figure = polygon
+        frame.adjustToFigure()
+        frame.draw()
+        resetBtn()
+        polygonBtn.classList.add('active')
+    }
+
+    circleBtn.onclick = () => {
+        savedFrame = []
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        frame = new Frame(200 ,200)
+        let ellipses = [
+            new Ellipse(50, 50, 50, 50, 0, 0, Math.PI * 2, true),
+            new Ellipse(50, 50, 35, 35, 0, 0, Math.PI, false),
+            new Ellipse(35, 40, 5, 5, 0, 0, Math.PI * 2, true),
+            new Ellipse(65, 40, 5, 5, 0, 0, Math.PI * 2, true),
+        ]
+        // центрируем
+        ellipses = ellipses.map((ellipse) => { 
+            const halfWidth = 100 / 2
+            const halfHeight = 100 / 2
+            ellipse.x = ellipse.x + canvas.width / 2 - halfWidth
+            ellipse.y = ellipse.y + canvas.height / 2 - halfHeight
+            return ellipse
+        })
+        const container = new Container(ellipses) 
+        frame.figure = container
+        frame.adjustToFigure()
+        frame.draw()
+        resetBtn()
+        circleBtn.classList.add('active')
+    }
+
+    imageBtn.onclick = () => {
+        savedFrame = []
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        frame = new Frame(200 ,200)
+        const img = new Image()
+        img.src = 'sonic.webp'
+        const width = 300
+        const height = 150
+        const paintedImage = new PaintedImage(img, canvas.width / 2 - width / 2, canvas.height / 2 - height / 2, 300, 150)
+        frame.figure = paintedImage
+        frame.adjustToFigure()
+        frame.draw()
+        resetBtn()
+        imageBtn.classList.add('active')
+    }
+
+    backBtn.onclick = () => {
+        if (savedFrame.length > 0) {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            frame = savedFrame.pop()
+            frame.draw()
+        }
+    }
+
+    circleBtn.click()
+
+    let savedProp = undefined
+
+    addEventListener("mousemove", (evt) => {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        const rect = canvas.getBoundingClientRect();
+        const mouse = { x: evt.clientX - rect.left, y: evt.clientY - rect.top }
+        if (savedProp) {
+            frame = savedProp.frame.clone()
+            const v = Vector.getVector(mouse, savedProp.downMouse)
+            if (savedProp.type === 'multiByCorner') {
+                frame.multiByCorner(savedProp.cornerInd, v)
+            } else if (savedProp.type === 'multiBySide') {
+                frame.multiBySide(savedProp.sideInd, v, savedProp.shift)
+            } else if (savedProp.type === 'transition') {
+                frame.transition(v)
+            } else if (savedProp.type === 'rotation') {
+                frame.rotation( savedProp.downMouse, mouse )
+            }
+        }
+        frame.draw(mouse)
+    });
+    addEventListener("mousedown", (evt) => {
+        const rect = canvas.getBoundingClientRect();
+        const mouse = { x: evt.clientX - rect.left, y: evt.clientY - rect.top }
+        const cornerInd = frame.containedInCorner(mouse)
+        if (cornerInd > -1) {
+            savedFrame.push( frame.clone() )
+            savedProp = {
+                type: 'multiByCorner',
+                cornerInd,
+                downMouse: mouse,
+                frame: frame.clone()
+            }
+            return
+        }
+        const sideInd = frame.containedInSide(mouse)
+        if (sideInd > -1) {
+            savedFrame.push( frame.clone() )
+            savedProp = {
+                type: 'multiBySide',
+                sideInd,
+                downMouse: mouse,
+                shift: evt.shiftKey, 
+                frame: frame.clone()
+            }
+            return
+        }
+        if (frame.containedInCircle(mouse)) {
+            savedFrame.push( frame.clone() )
+            savedProp = {
+                type: 'rotation',
+                downMouse: mouse, 
+                frame: frame.clone()
+            }
+            return
+        }
+        if (frame.containedInRect(mouse)) {
+            savedFrame.push( frame.clone() )
+            savedProp = {
+                type: 'transition',
+                downMouse: mouse, 
+                frame: frame.clone()
+            }
+        }
+    })
+    addEventListener("mouseup", (evt) => {
+        savedProp = undefined
+    })
+</script>
+</html>
