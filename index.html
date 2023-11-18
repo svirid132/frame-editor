@@ -127,12 +127,20 @@
         clockwise = false
         constructor() { }
 
+        clone() { 
+            return AbstractFigure()
+        }
         setClockwise(val) {
             this.clockwise = val
         }
         clockwise() {
             return this.clockwise
         }
+        prop() {
+            return { x: 0, y: 0, width: 0, height: 0 } 
+        }
+        multiMatrix(mat) { }
+        draw() { }
     }
 
     // Фигуры
