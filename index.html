@@ -57,10 +57,10 @@
         constructor(x, y) {
             this.x = x; this.y = y
         }
-        static getVector(p2, p1) { // вектор от двух точек
+        static getVector(p2, p1) { // создание вектора по двум точкам
             return new Vector(p2.x - p1.x,  p2.y - p1.y)
         }
-        static getNormal(v) { // нормаль вектора
+        static getNormal(v) { // возращение нормали вектора
             return new Vector( v.y, -v.x )
         }
         static getRotationAngle(v) {  // угол поворота относитльно оси X
@@ -183,7 +183,7 @@
     }
 
     class Ellipse extends AbstractFigure {
-        constructor(x, y, radiusX, radiusY, rotation, startAngle, endAngle, unclockwise) {
+        constructor(x, y, radiusX, radiusY, rotation, startAngle, endAngle, counterclockwise) {
             super()
             this.x = x; this.y = y; // center
             this.radiusX = radiusX
@@ -191,7 +191,7 @@
             this.rotation = rotation // поворот элипса
             this.startAngle = startAngle
             this.endAngle = endAngle
-            super.setClockwise(!unclockwise)
+            super.setClockwise(!counterclockwise)
         }
         clone() { // создание копии Ellipse
             const ellipse = new Ellipse(this.x, this.y, this.radiusX, this.radiusY, this.rotation, this.startAngle, this.endAngle, !super.clockwise())
@@ -312,16 +312,13 @@
 
     // Рамка редактирования
     class Frame {
-        points = [] // точки рамки
         figure = new Polygon() // фигура, которая редектируется
         // свойства painted изменяются после вызова метода draw
         paintedCircles = new Array(4).fill().map(() => (new Path2D())) // круги  для поворота рамки
         paintedSides = new Array(4).fill().map(() => new Path2D())
         paintedRect = new Path2D() // область перемещения рамки
-        // уголки рамки, масштабируют одновременно длину и высоту рамки
-        cornerWidth = 7.5
+        cornerWidth = 7.5 // ширина уголка
         paintedCorners = new Array(4)
-
 
         constructor(width = 0, height = 0) {
             this.width = width;
@@ -332,6 +329,11 @@
                 {x: width, y: height}, 
                 {x: 0, y: height}
             ]
+        }
+
+        setFigure(figure) {
+            this.figure = figure.clone()
+            this.adjustToFigure()
         }
 
         clone() {
@@ -394,14 +396,8 @@
             const beginIndex = (indexByMinX + 3) % this.points.length
             const middleIndex = indexByMinX
             const lastIndex = (indexByMinX + 1) % this.points.length
-            const v1 = {
-                x: this.points[middleIndex].x - this.points[beginIndex].x, 
-                y: this.points[middleIndex].y - this.points[beginIndex].y
-            }
-            const v2 = {
-                x: this.points[lastIndex].x - this.points[middleIndex].x, 
-                y: this.points[lastIndex].y - this.points[middleIndex].y
-            }
+            const v1 = Vector.getVector( this.points[middleIndex], this.points[beginIndex] )
+            const v2 = Vector.getVector( this.points[lastIndex], this.points[middleIndex] )
             const multiVec = v1.x * v2.y - v2.x * v1.y // Векторное произведение
             return multiVec < 0
         }
@@ -600,8 +596,7 @@
             return ({ x: canvas.width / 2 + p.x - 75, y: canvas.height / 2 + p.y - 100 }) // центрируем
         })
         const polygon = new Polygon(points)
-        frame.figure = polygon
-        frame.adjustToFigure()
+        frame.setFigure( polygon )
         frame.draw()
         resetBtn()
         polygonBtn.classList.add('active')
@@ -626,8 +621,7 @@
             return ellipse
         })
         const container = new Container(ellipses) 
-        frame.figure = container
-        frame.adjustToFigure()
+        frame.setFigure( container )
         frame.draw()
         resetBtn()
         circleBtn.classList.add('active')
@@ -642,8 +636,7 @@
         const width = 300
         const height = 150
         const paintedImage = new PaintedImage(img, canvas.width / 2 - width / 2, canvas.height / 2 - height / 2, 300, 150)
-        frame.figure = paintedImage
-        frame.adjustToFigure()
+        frame.setFigure( paintedImage )
         frame.draw()
         resetBtn()
         imageBtn.classList.add('active')
